@@ -576,10 +576,10 @@ class ActionController extends Controller
 
             if(!$this->isVendor($sub['sub'])){
                 $validation_array['vendor'] = 'required|numeric';
-                // $request->merge(['status' => 'approved']);
+                $request->merge(['status' => 'approved']);
             }else{
                 $request->merge(['vendor' => $sub['sub']]);
-                // $request->merge(['status' =>'pending']);
+                $request->merge(['status' =>'pending']);
             }
 
             $customMessages = [
@@ -618,6 +618,54 @@ class ActionController extends Controller
     }
 
 
+
+    public function changeProductStatus(Request $request){
+       
+        try {
+           
+            $validator = Validator::make($request->all(), [
+                'product_id' => 'required|numeric',
+                'status'     => 'required',
+            ]);
+
+            if($validator->fails()){
+                return response(['success' => false,'data'=> null,'message' => implode(" / ",$validator->messages()->all())], 422);   
+            }
+
+            if(!$this->isRecodeExsist($validator->valid()['product_id'],'products')){
+                return response(['success' => false,'data'=> null,'message' =>'Opps!. Invalid Product.'], 404);  
+            }
+
+            if(!$request->header('authorization')){
+                return response(['success' => false,'data'=> null,'message' => "Opps!. token is required.",], 422);   
+            }
+            $sub  = $this->getAuthorization($request);  
+            if(!$this->isRecodeExsist($sub['sub'],'affiliate_users')){
+                return response(['success' => false,'data'=> null,'message' =>'Opps!. Auth user not found.'], 404);  
+            }
+
+            if($this->isVendor($sub['sub'])){
+                return response(['success' => false,'data'=> null,'message' =>'Opps!. You Don`t Have Enough Permissions!'], 404); 
+            }
+
+            if(!in_array($validator->valid()['status'], ['pending','approved','disapproved'])){
+                return response(['success' => false,'data'=> null,'message' =>'Opps!. Invalid Status.'], 404); 
+            }
+
+            DB::beginTransaction($validator);
+                $product           = Products::find($validator->valid()['product_id']);
+                $product->status   = $validator->valid()['status'];
+                $product->save();
+            DB::commit();
+
+            $data = array('name' => $product->title);
+            return response(['success' => true,'data'=> $data,'message' => 'Product Status Updated Success'], 200);
+
+        } catch (\Throwable $e) {
+            DB::rollback();
+            return response(['success' => false,'data'=> null,'message' => "Opps!. Something went wrong. Please try again later!", 'error' => $e->getMessage()], 500);
+        }   
+    }
 
 
 

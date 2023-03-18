@@ -395,12 +395,37 @@ class DataController extends Controller
             if($this->isVendor($sub['sub'])){
                 $data = $data->where('vendor', $sub['sub']);
             }
+            if($request->has('status')){
+                if(!in_array($request->status, ['pending','approved','disapproved'])){
+                    return response(['success' => false,'data'=> null,'message' =>'Opps!. Invalid Status.'], 404); 
+                }
+                $data = $data->where('status', $request->status);
+            }
             $data = $data->orderBy('id', 'DESC')->get();
-            return response(['success' => true,'data'=>  $data,'message' => 'Data Found Success.'], 200);
+            $coutsArray = array( 'all'=> $this->getProductCounts($sub['sub']), 
+                'pending'       => $this->getProductCounts($sub['sub'],'pending'),
+                'approved'      => $this->getProductCounts($sub['sub'],'approved'),
+                'disapproved'   => $this->getProductCounts($sub['sub'],'disapproved')
+            );
+            $response = array('products'=> $data, 'counts'=> $coutsArray);
+            return response(['success' => true,'data'=> $response,'message' => 'Data Found Success.'], 200);
         }
         catch (\Throwable $e){
             return response(['success' => false,'data'=> null,'message' => "Opps!. Something went wrong. Please try again later!", 'error' => $e->getMessage()], 500);
         }
+    }
+
+
+    private function getProductCounts($sub,$status=null){
+        $data = DB::table('products');
+        if($this->isVendor($sub)){
+            $data = $data->where('vendor', $sub);
+        }
+        if($status!=null){
+            $data = $data->where('status', $status);
+        }
+        $data = $data->count();
+        return $data;
     }
 
 

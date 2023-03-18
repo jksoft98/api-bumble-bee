@@ -109,6 +109,8 @@ Route::group([
 
     Route::put('/product-edit'                                  , 'ActionController@productEdit');
 
+    Route::put('/change-product-status'                         , 'ActionController@changeProductStatus');
+
     
 
 
