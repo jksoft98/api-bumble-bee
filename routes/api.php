@@ -144,4 +144,8 @@ Route::group([
 
     Route::get('/get-all-product-data'                          , 'DataController@getAllProducts');
 
+    Route::get('/get-search-products'                           , 'DataController@getSearchProducts');
+
+    
+
 });

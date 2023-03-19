@@ -416,6 +416,19 @@ class DataController extends Controller
     }
 
 
+
+    public function getSearchProducts(Request $request){
+        $data = Products::with('vendor:id,first_name,last_name','brand:id,brand_name','category:id,category_name')->where('status', 'approved')->where('title', 'like', '%' . $request->q . '%')->get();
+        foreach($data as $key=> $i){
+            $i->p_id = $i->id;
+            $i->id = $key;
+        }
+        $array = ['success' => true,'data'=>  $data,  'total_count' => count($data) , 'message' => 'Data Found Success.'];
+        return response()->json($array);
+    }
+
+
+
     private function getProductCounts($sub,$status=null){
         $data = DB::table('products');
         if($this->isVendor($sub)){
