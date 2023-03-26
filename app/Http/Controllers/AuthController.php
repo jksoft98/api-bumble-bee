@@ -123,6 +123,10 @@ class AuthController extends Controller
                 'user_role' => 'required|numeric',
             ];
 
+            if($request->user_role == 2){
+                $validation_array['business_name']  = 'required|string|between:2,100';
+            }
+
             $customMessages = [
                 'regex' => 'Password should be minimum 5 characters, at least one uppercase letter and one lowercase letter'
             ];
@@ -178,6 +182,10 @@ class AuthController extends Controller
 
             if ($request->has('reset_password')) {
                 $validation_array['password'] = 'required|string|confirmed|regex:/^(?=.*[a-z])(?=.*[A-Z])[0-9a-zA-Z\d@$!^%*#?&]{5,}$/';
+            }
+
+            if($request->user_role == 2){
+                $validation_array['business_name']  = 'required|string|between:2,100';
             }
 
             $customMessages = [

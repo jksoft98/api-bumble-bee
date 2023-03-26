@@ -12,6 +12,7 @@ use App\Models\Message;
 use App\Models\Brands;
 use App\Models\Categories;
 use App\Models\Products;
+use App\Models\InstallmentPlan;
 use Validator;
 use Carbon\Carbon;
 
@@ -212,9 +213,7 @@ class DataController extends Controller
 
 
     public function getAllCustomers(Request $request){
-
         try {
-        
             if(!$request->header('authorization')){
                 return response(['success' => false,'data'=> null,'message' => "Opps!. token is required.",], 422);   
             }
@@ -223,7 +222,25 @@ class DataController extends Controller
                 return response(['success' => false,'data'=> null,'message' =>'Opps!. Auth user not found.'], 404);  
             }
             $data = Customers::orderBy('id', 'DESC')->get();
-            return response(['success' => true,'data'=>  $data,'message' => 'Data Found Success.'], 200);
+            $response=[];
+            foreach($data as $item){
+                $loans = DB::table('loans')->where('customer',$item->id)->where('is_settled',0)->sum('amount');
+                if($loans != null){
+                    $item->installment_plan = "Credit";
+                    $item->used_amount = $loans;
+                }else{
+                    $item->installment_plan = "Not Processing";
+                    $item->used_amount = 0;
+                    $order = DB::table('orders')->where('customer',$item->id)->where('installment_plan',1)->first();
+                    if($order){
+                        $item->installment_plan = "Full Payment";
+                        $item->used_amount = $order->total_amount;
+                    }
+                }
+                $item->loan_balance = 0;
+                array_push($response,$item);
+            }
+            return response(['success' => true,'data'=>  $response,'message' => 'Data Found Success.'], 200);
 
         }
         catch (\Throwable $e){
@@ -279,6 +296,8 @@ class DataController extends Controller
             $data = array(
                 'user_count'        => AffiliateUsers::count(),
                 'customer_count'    => Customers::count(),
+                'loan_count'        => DB::table('loans')->where('is_settled',0)->count(),
+                'order_count'       => DB::table('orders')->count(),
             );
             return response(['success' => true,'data'=>  $data,'message' => 'Data Found Success.'], 200);
 
@@ -391,7 +410,7 @@ class DataController extends Controller
             if(!$this->isRecodeExsist($sub['sub'],'affiliate_users')){
                 return response(['success' => false,'data'=> null,'message' =>'Opps!. Auth user not found.'], 404);  
             }
-            $data = Products::with('vendor:id,first_name,last_name','brand:id,brand_name','category:id,category_name'); 
+            $data = Products::with('vendor:id,first_name,last_name,business_name','brand:id,brand_name','category:id,category_name'); 
             if($this->isVendor($sub['sub'])){
                 $data = $data->where('vendor', $sub['sub']);
             }
@@ -418,13 +437,35 @@ class DataController extends Controller
 
 
     public function getSearchProducts(Request $request){
-        $data = Products::with('vendor:id,first_name,last_name','brand:id,brand_name','category:id,category_name')->where('status', 'approved')->where('title', 'like', '%' . $request->q . '%')->get();
+        $data = Products::with('vendor:id,first_name,last_name,business_name','brand:id,brand_name','category:id,category_name')->where('status', 'approved')->where('title', 'like', '%' . $request->q . '%')->get();
         foreach($data as $key=> $i){
             $i->p_id = $i->id;
             $i->id = $key;
         }
         $array = ['success' => true,'data'=>  $data,  'total_count' => count($data) , 'message' => 'Data Found Success.'];
         return response()->json($array);
+    }
+
+
+
+    public function getAllInstallmentPlans(Request $request){
+
+        try {
+        
+            if(!$request->header('authorization')){
+                return response(['success' => false,'data'=> null,'message' => "Opps!. token is required.",], 422);   
+            }
+            $sub  = $this->getAuthorization($request);  
+            if(!$this->isRecodeExsist($sub['sub'],'affiliate_users')){
+                return response(['success' => false,'data'=> null,'message' =>'Opps!. Auth user not found.'], 404);  
+            }
+            $data = InstallmentPlan::orderBy('id', 'ASC')->get();
+            return response(['success' => true,'data'=>  $data,'message' => 'Data Found Success.'], 200);
+
+        }
+        catch (\Throwable $e){
+            return response(['success' => false,'data'=> null,'message' => "Opps!. Something went wrong. Please try again later!", 'error' => $e->getMessage()], 500);
+        }
     }
 
 

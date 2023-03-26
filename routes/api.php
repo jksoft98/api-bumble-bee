@@ -111,6 +111,8 @@ Route::group([
 
     Route::put('/change-product-status'                         , 'ActionController@changeProductStatus');
 
+    Route::post('/vendor-orders-create'                         , 'ActionController@vendorOrdersCreate');
+
     
 
 
@@ -146,6 +148,7 @@ Route::group([
 
     Route::get('/get-search-products'                           , 'DataController@getSearchProducts');
 
-    
+    Route::get('/get-all-installment-plan-data'                 , 'DataController@getAllInstallmentPlans');
+
 
 });

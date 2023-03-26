@@ -25,6 +25,7 @@ class AffiliateUsers extends Authenticatable implements JWTSubject
         'id',
         'first_name',
         'last_name',
+        'business_name',
         'phone',
         'password',
         'email',

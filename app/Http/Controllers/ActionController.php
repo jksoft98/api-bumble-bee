@@ -11,6 +11,7 @@ use App\Models\UserRoles;
 use App\Models\Brands;
 use App\Models\Categories;
 use App\Models\Products;
+use App\Models\searchCode;
 use Validator;
 
 class ActionController extends Controller
@@ -669,6 +670,165 @@ class ActionController extends Controller
 
 
 
+    public function vendorOrdersCreate(Request $request){
+         try {
+             $response =[];
+             if(!$request->header('authorization')){
+                 return response(['success' => false,'data'=> null,'message' => "Opps!. token is required.",], 500);
+             }
+
+             foreach($request->data as $i => $item){
+                
+                $checkVendor = $this->checkVendorHasProduct($item);
+                if($checkVendor == false){
+                     return response(['success' => false,'data'=> null,'message' => "Opps!. Vendor and Product Mismatched."], 500);
+                }
+
+                if($i == 0 && $item['installment_plan'] == 2){
+                    $checkCustomerHasLoan = $this->checkCustomerHasLoan($item['customer']);
+                    if($checkCustomerHasLoan == false){
+                        return response(['success' => false,'data'=> null,'message' => "Opps!. This customer already has a credit balance."], 500);
+                    }
+                }
+             } 
+ 
+             DB::beginTransaction();
+             foreach($request->data as $key => $item){
+                 $item_request = new Request($item);
+                 $item_request->headers->set('authorization', $request->header('authorization'));
+
+                 if($key == 0 && $item_request->installment_plan == 2){
+                    $loanAmout = $this->getTotalLoanAmount($request->data);
+                    $loanId=DB::table('loans')->insertGetId(
+                        ['customer'  => $item_request->customer,'amount'=> $loanAmout]
+                    );
+                    $item_request['loan'] = $loanId;
+                 }
+
+                 $response_itmes = $this->createOrder($item_request);
+                 array_push($response,$response_itmes);
+             }
+            DB::commit();
+            return response()->json(['success' => true,'data'=> $response,'message' => 'Everything good! Order placed successfully!'], 201);
+        }catch (\Exception $e) {
+            DB::rollback();
+            return response(['success' => false,'data'=> null,'message' => "Opps!. Something went wrong. Please try again later!", 'error' => $e->getMessage()], 500);
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Public function / Create Order
+    |--------------------------------------------------------------------------
+    */
+    public function createOrder(Request $request){
+
+        $validation_array = [
+            'customer'          => 'required|numeric',
+            'installment_plan'  => 'required|numeric',
+            'vendor'            => 'required|numeric',
+            "items"             => 'required',
+        ];
+
+        $validator = Validator::make($request->all(), $validation_array);
+
+        if($validator->fails()){
+            return response(['success' => false,'data'=> null,'message' => implode(" / ",$validator->messages()->all())], 200);
+        }
+
+        if(!$request->header('authorization')){
+            return response(['success' => false,'data'=> null,'message' => "Opps!. token is required.",], 500);
+        }
+
+        $sub          = $this->getAuthorization($request);
+        $items        = $request->items;
+        $search_code  = $this->generateOrderSearchCode('ORD');
+        $get_total    = $this->getTotal($items);
+        $loan         = null;
+        if($request->has('loan')) {
+            $loan = $request->loan;
+        }
+
+        $orderId=DB::table('orders')->insertGetId(
+            [   'search_code'             => $search_code,
+                'customer'                => $request->customer,
+                'total_amount'            => $get_total['total_amount'],
+                'vendor'                  => $request->vendor,
+                'installment_plan'        => $request->installment_plan,
+                'loan'                    => $loan,
+            ]
+        );
+        $response     = array(
+            'order_id'      => $search_code,
+            'amount'        => $get_total['total_amount'],
+        );
+        $order_items = $this->insertOrdertems($orderId,$items);
+        if($orderId){
+            return ['success' => true,'data'=> $response,'message' => 'Everything good! Order placed successfully!'];
+        }
+    }
+
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Prvate function / Insert order items
+    |--------------------------------------------------------------------------
+    */
+    private function insertOrdertems($orderId,$items)
+    {
+        
+        foreach ($items as $key => $item) {
+            $product= Products::where('id', $item['product_id'])->first();
+            DB::table('order_items')->insert(
+                ['order'             => $orderId,
+                 'product'           => $item['product_id'],
+                 'quantity'          => $item['quantity'],
+                 'amount'            => $product->price * $item['quantity']]
+            );
+        }
+
+        return true;
+    }
+
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Prvate function / Get total
+    |--------------------------------------------------------------------------
+    */
+    private function getTotal($items)
+    {   //define array
+        $summary =array('total_amount'=>0);
+        foreach ($items as $key => $item)
+        {
+            $product= Products::where('id', $item['product_id'])->first();
+            $summary['total_amount'] += $product->price * $item['quantity'];
+        }
+        return $summary;
+    }
+
+
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Prvate function / Generate order search code
+    |--------------------------------------------------------------------------
+    */
+    private function generateOrderSearchCode($prefix)
+    {
+        $query = searchCode::where('search_code.order_prefix',$prefix)
+                    ->select('search_code.order_prefix','search_code.last_order')
+                    ->first();
+        $search_code = $query->order_prefix."-".($query->last_order+1);
+        searchCode::increment('search_code.last_order', 1);
+        return $search_code;
+    }
 
 
     /*
@@ -687,5 +847,58 @@ class ActionController extends Controller
     }
 
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Public function / Check Vendor has product
+    |--------------------------------------------------------------------------
+    */
+    public function checkVendorHasProduct($data){
+        $reque_vendor =  $data['vendor'];
+        foreach ($data['items'] as $data_item) {
+            $product_id =  $data_item['product_id'];
+            $product = Products::where('id', $product_id)->where('vendor',$reque_vendor)->where('status','approved')->first();
+            if(!$product){
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Public function / get Loan Amount
+    |--------------------------------------------------------------------------
+    */
+    private function getTotalLoanAmount($requestData){
+        $grandTotalAmount = 0;
+        foreach($requestData as $data){
+            $totalAmount = 0;
+            foreach($data['items'] as $data_item) {
+                $product= Products::where('id', $data_item['product_id'])->first();
+                $totalAmount += $product->price * $data_item['quantity'];
+            }
+            $grandTotalAmount += $totalAmount;
+        }
+        if($grandTotalAmount > 15000){
+            $grandTotalAmount = 15000;
+        }
+        return $grandTotalAmount;
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Public function / Check Customer has loan
+    |--------------------------------------------------------------------------
+    */
+    public function checkCustomerHasLoan($customer){
+        $loans = DB::table('loans')->where('customer',$customer)->where('is_settled',0)->sum('amount');
+        if($loans!=null){
+                return false;
+        }
+        return true;
+    }
 
 }
