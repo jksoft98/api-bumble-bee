@@ -294,10 +294,12 @@ class DataController extends Controller
             $data = Customers::orderBy('id', 'DESC')->get();
 
             $data = array(
-                'user_count'        => AffiliateUsers::count(),
-                'customer_count'    => Customers::count(),
-                'loan_count'        => DB::table('loans')->where('is_settled',0)->count(),
-                'order_count'       => DB::table('orders')->count(),
+                'user_count'            => AffiliateUsers::count(),
+                'customer_count'        => Customers::count(),
+                'loan_count'            => DB::table('loans')->where('is_settled',0)->count(),
+                'order_count'           => DB::table('orders')->count(),
+                'sales_chart_data'      => $this->getSalesChartData(),
+                'sales_item_chart_data' => $this->getSalesItemChartData(),
             );
             return response(['success' => true,'data'=>  $data,'message' => 'Data Found Success.'], 200);
 
@@ -482,5 +484,99 @@ class DataController extends Controller
         return $data;
     }
 
+
+    private function getSalesChartData(){
+
+        $daily = DB::table('orders')
+                ->selectRaw("DATE_FORMAT(orders.created_date,'%Y-%m-%d') AS date")
+                ->selectRaw("SUM(total_amount) as grand_total")
+                ->selectRaw("COUNT(id) as orders")
+                ->groupByRaw("DATE_FORMAT(orders.created_date,'%Y-%m-%d')")
+                ->orderByRaw("DATE_FORMAT(orders.created_date,'%Y-%m-%d'),'DESC'")
+                ->whereDate('orders.created_date','>=',Carbon::now()->subDays(30))
+                ->get();
+       
+
+        $weekly = DB::table('orders')
+                ->selectRaw("WEEK(orders.created_date) AS week")
+                ->selectRaw("SUM(total_amount) as grand_total")
+                ->selectRaw("COUNT(id) as orders")
+                ->groupByRaw("WEEK(orders.created_date)")
+                ->orderByRaw("WEEK(orders.created_date), 'DESC'")
+                ->whereDate('orders.created_date','>=',Carbon::now()->subDays(60))
+                ->get();
+       
+
+        $monthly = DB::table('orders')
+                ->selectRaw("DATE_FORMAT(orders.created_date,'%Y / %m') AS month")
+                ->selectRaw("SUM(total_amount) as grand_total")
+                ->selectRaw("COUNT(id) as orders")
+                ->groupByRaw("DATE_FORMAT(orders.created_date,'%Y / %m')")
+                ->orderByRaw("DATE_FORMAT(orders.created_date,'%Y / %m'),'DESC'")
+                ->whereDate('orders.created_date','>=',Carbon::now()->subMonths(12))
+                ->get();
+
+        return ['daily' => $daily, 'weekly' => $weekly, 'monthly' => $monthly];
+    }
+
+
+
+    private function getSalesItemChartData(){
+
+        $lastThirtyDays = DB::table('order_items')
+                        ->join('orders', 'orders.id', '=', 'order_items.order')
+                        ->join('products', 'products.id', '=', 'order_items.product')
+                        ->selectRaw("products.title AS product")
+                        ->selectRaw("SUM(order_items.quantity) as sales_qty")
+                        ->groupByRaw("products.title")
+                        ->orderByRaw("SUM(order_items.quantity)")
+                        ->whereDate('orders.created_date','>=',Carbon::now()->subDays(30))
+                        ->limit(5)
+                        ->get();
+
+        $lastTwowellMonths = DB::table('order_items')
+                        ->join('orders', 'orders.id', '=', 'order_items.order')
+                        ->join('products', 'products.id', '=', 'order_items.product')
+                        ->selectRaw("products.title AS product")
+                        ->selectRaw("SUM(order_items.quantity) as sales_qty")
+                        ->groupByRaw("products.title")
+                        ->orderByRaw("SUM(order_items.quantity)")
+                        ->whereDate('orders.created_date','>=',Carbon::now()->subMonths(12))
+                        ->limit(5)
+                        ->get();
+                        
+        foreach($lastThirtyDays as $key1 => $day){
+            $lastThirtyDays[$key1]->color   = $this->getRgbColorCode($key1);
+            $lastThirtyDays[$key1]->product = substr_replace($day->product, "", 15);
+
+        }                  
+        foreach($lastTwowellMonths as $key2 => $month){
+            $lastTwowellMonths[$key2]->color = $this->getRgbColorCode($key2);
+            $lastTwowellMonths[$key2]->product = substr_replace($month->product, "", 15);
+        }                
+                        
+        return ['last_thirty_days' => $lastThirtyDays, 'last_twowell_months' => $lastTwowellMonths];                
+    }
+
+
+    private function getRgbColorCode($index){
+        $color = 'rgb(255, 99, 132)';
+        if($index == 0){
+            $color = 'rgb(255, 99, 132)';
+        }
+        if($index == 1){
+            $color = 'rgb(54, 162, 235)';
+        }
+        if($index == 2){
+            $color = 'rgb(248, 196, 113)';
+        }
+        if($index == 3){
+            $color = 'rgb(39, 174, 96)';
+        }
+        if($index == 4){
+            $color = 'rgb(255, 205, 86)';
+        }
+        return $color;
+    }
 
 }
