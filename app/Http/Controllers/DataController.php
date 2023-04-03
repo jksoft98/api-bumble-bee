@@ -13,6 +13,7 @@ use App\Models\Brands;
 use App\Models\Categories;
 use App\Models\Products;
 use App\Models\InstallmentPlan;
+use App\Models\Orders;
 use Validator;
 use Carbon\Carbon;
 
@@ -226,18 +227,22 @@ class DataController extends Controller
             foreach($data as $item){
                 $loans = DB::table('loans')->where('customer',$item->id)->where('is_settled',0)->sum('amount');
                 if($loans != null){
+                    $loanOrders = DB::table('loans')->where('loans.customer',$item->id)->where('loans.is_settled',0)
+                                ->join('orders', 'orders.loan', '=', 'loans.id')->sum('orders.total_amount');
                     $item->installment_plan = "Credit";
-                    $item->used_amount = $loans;
+                    $item->used_amount = $loanOrders;
+                    $item->loan_balance = $loans;
                 }else{
                     $item->installment_plan = "Not Processing";
                     $item->used_amount = 0;
-                    $order = DB::table('orders')->where('customer',$item->id)->where('installment_plan',1)->first();
-                    if($order){
+                    $item->loan_balance = 0;
+                    $order = DB::table('orders')->where('customer',$item->id)->where('installment_plan',1)->sum('total_amount');
+                    if($order != null){
                         $item->installment_plan = "Full Payment";
-                        $item->used_amount = $order->total_amount;
+                        $item->used_amount = $order;
                     }
                 }
-                $item->loan_balance = 0;
+               
                 array_push($response,$item);
             }
             return response(['success' => true,'data'=>  $response,'message' => 'Data Found Success.'], 200);
@@ -464,6 +469,29 @@ class DataController extends Controller
             $data = InstallmentPlan::orderBy('id', 'ASC')->get();
             return response(['success' => true,'data'=>  $data,'message' => 'Data Found Success.'], 200);
 
+        }
+        catch (\Throwable $e){
+            return response(['success' => false,'data'=> null,'message' => "Opps!. Something went wrong. Please try again later!", 'error' => $e->getMessage()], 500);
+        }
+    }
+
+
+
+    public function getAllOrders(Request $request){
+        try {
+            if(!$request->header('authorization')){
+                return response(['success' => false,'data'=> null,'message' => "Opps!. token is required.",], 422);   
+            }
+            $sub  = $this->getAuthorization($request);  
+            if(!$this->isRecodeExsist($sub['sub'],'affiliate_users')){
+                return response(['success' => false,'data'=> null,'message' =>'Opps!. Auth user not found.'], 404);  
+            }
+            $data = Orders::with('installment_plan','vendor:id,business_name,phone','customer:id,full_name,phone,address'); 
+            if($this->isVendor($sub['sub'])){
+                $data = $data->where('vendor', $sub['sub']);
+            }
+            $data = $data->orderBy('id', 'DESC')->get();
+            return response(['success' => true,'data'=> $data,'message' => 'Data Found Success.'], 200);
         }
         catch (\Throwable $e){
             return response(['success' => false,'data'=> null,'message' => "Opps!. Something went wrong. Please try again later!", 'error' => $e->getMessage()], 500);

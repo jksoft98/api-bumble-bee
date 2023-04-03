@@ -150,5 +150,7 @@ Route::group([
 
     Route::get('/get-all-installment-plan-data'                 , 'DataController@getAllInstallmentPlans');
 
+    Route::get('/get-all-order-data'                            , 'DataController@getAllOrders');
+    
 
 });
